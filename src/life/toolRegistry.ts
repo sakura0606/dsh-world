@@ -1,4 +1,5 @@
 import type { Agent } from '@deepseek-ai/dsh-agent';
+import { scopeOf } from '@deepseek-ai/dsh-scope';
 import type {} from '@deepseek-ai/dsh-tools';
 import { errorText, type Faults } from '../faults.ts';
 import { registerScopedTool } from '../worldScope.ts';
@@ -44,7 +45,9 @@ const UNUSED_GLOBAL = [
 export function hideGlobalTools(agent: Agent, names: readonly string[]): () => void {
   const tools = agent.ctx.tools;
   if (typeof tools.restrict !== 'function') return () => {};
-  const present = names.filter(name => tools.get(name) !== undefined);
+  // Without the scope, `get` reads the global layer alone; hers sit in the preset's ancestor layers.
+  const scope = scopeOf(agent.ctx);
+  const present = names.filter(name => tools.get(name, scope) !== undefined);
   return present.length ? tools.restrict({ deny: present }) : () => {};
 }
 
@@ -79,11 +82,11 @@ export function createToolRegistry(deps: { faults: Faults; logger: { error(...ar
         if (needsAlarm) {
           const done = register(agent, tools, ALARM_TOOLS);
           // The world sessions' own policy comes and goes with their alarm tools.
-          try {
-            if (deps.guard) done.push(agent.ctx.tools.guard(execution => deps.inWorld(agent) ? deps.guard!(execution) : undefined));
-            done.push(hideGlobalTools(agent, UNUSED_GLOBAL));
-          }
+          try { if (deps.guard) done.push(agent.ctx.tools.guard(execution => deps.inWorld(agent) ? deps.guard!(execution) : undefined)); }
           catch (error) { undo(done); throw error; }
+          // A host that refuses the tool list must not cost her the alarm tools; the fault says what happened.
+          try { done.push(hideGlobalTools(agent, UNUSED_GLOBAL)); }
+          catch (error) { deps.faults.set(`restrict:${agent.id}`, `工具限制没能挂上：${errorText(error)}`); deps.logger.error(error); }
           alarm.set(agent, done); changed = true;
         }
         if (needsHome) { home.set(agent, register(agent, tools, HOME_TOOLS)); changed = true; }
