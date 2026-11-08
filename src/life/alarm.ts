@@ -2,7 +2,7 @@ import { formatLocalTime } from '../timeContext.ts';
 import type { Alarm, Review } from './types.ts';
 import { ALARM_MARK, exampleTime, fillMessage, readAlarmMessages, type AlarmMessages } from './messages.ts';
 
-const MIN_ALARM_MS = 60_000;
+const MIN_ALARM_MS = 30 * 60_000;
 const LATE_NOTICE_MS = 2 * 60_000;
 /** The local time of her evening look back unless the console sets another. */
 export const DEFAULT_REVIEW_TIME = '23:00';
@@ -22,7 +22,12 @@ export function resolveAlarmTime(input: { at?: string; after_minutes?: number },
     target = new Date(now.getTime() + minutes * 60_000);
   }
   if (!Number.isFinite(target.getTime())) throw new Error(`无法识别的时间：${input.at ?? input.after_minutes}`);
-  if (target.getTime() - now.getTime() < MIN_ALARM_MS) throw new Error('闹钟至少要定在 1 分钟之后');
+  // 本地定制（fork）：闹钟最小间隔 30 分钟。上游是不足 1 分钟就报错；
+  // 实测她会几秒一醒、连续重排，每轮都变成一次完整请求。这里改成钳制，
+  // 太近就排到 30 分钟后，避免她反复试错白烧 token。
+  if (target.getTime() - now.getTime() < MIN_ALARM_MS) {
+    target = new Date(now.getTime() + MIN_ALARM_MS);
+  }
   return target;
 }
 const offsetMs = (at: number, timeZone: string) => {

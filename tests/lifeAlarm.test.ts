@@ -3,23 +3,23 @@ import test from 'node:test';
 import { greetingText, earlyStopText, nextReview, reviewOf, formatDuration, nextLocalTime, resolveAlarmTime, wakeText } from '../src/life/alarm.ts';
 
 const now = new Date('2026-10-23T12:00:00.000Z');
-test('alarm time accepts exactly one of an offset timestamp or minutes, at least one minute ahead', () => {
+test('alarm time accepts exactly one of an offset timestamp or minutes, and moves anything inside thirty minutes out to thirty', () => {
   assert.equal(resolveAlarmTime({ at: '2026-10-23T21:30:00+09:00' }, now).toISOString(), '2026-10-23T12:30:00.000Z');
   assert.equal(resolveAlarmTime({ after_minutes: 90 }, now).toISOString(), '2026-10-23T13:30:00.000Z');
   assert.throws(() => resolveAlarmTime({}, now), /只给/);
   assert.throws(() => resolveAlarmTime({ at: '2026-10-23T22:00:00+09:00', after_minutes: 5 }, now), /只给/);
   assert.throws(() => resolveAlarmTime({ at: '2026-10-23T22:00:00' }, now), /时区/);
-  assert.throws(() => resolveAlarmTime({ after_minutes: 0.5 }, now), /1 分钟/);
-  assert.throws(() => resolveAlarmTime({ at: '2026-10-23T20:00:00+09:00' }, now), /1 分钟/);
+  assert.equal(resolveAlarmTime({ after_minutes: 0.5 }, now).toISOString(), '2026-10-23T12:30:00.000Z', 'the floor clamps instead of throwing');
+  assert.equal(resolveAlarmTime({ at: '2026-10-23T20:00:00+09:00' }, now).toISOString(), '2026-10-23T12:30:00.000Z', 'a time already past is the floor, not an error');
   assert.throws(() => resolveAlarmTime({ after_minutes: -3 }, now), /正数/);
 });
-test('alarm time rejects overflow, loose formats and honours the one-minute boundary', () => {
+test('alarm time rejects overflow and loose formats, and rounds anything inside thirty minutes out to thirty', () => {
   assert.throws(() => resolveAlarmTime({ after_minutes: 1e12 }, now), /无法识别/);
   assert.equal(resolveAlarmTime({ at: '2026-10-23T21:30+09:00' }, now).toISOString(), '2026-10-23T12:30:00.000Z');
   assert.throws(() => resolveAlarmTime({ at: 'Oct 24 2026 21:00 GMT+09:00' }, now), /ISO 8601/);
-  assert.equal(resolveAlarmTime({ after_minutes: 1 }, now).toISOString(), '2026-10-23T12:01:00.000Z');
-  assert.equal(resolveAlarmTime({ at: '2026-10-23T12:01:00Z' }, now).toISOString(), '2026-10-23T12:01:00.000Z');
-  assert.throws(() => resolveAlarmTime({ at: '2026-10-23T12:00:59Z' }, now), /1 分钟/);
+  assert.equal(resolveAlarmTime({ after_minutes: 1 }, now).toISOString(), '2026-10-23T12:30:00.000Z');
+  assert.equal(resolveAlarmTime({ at: '2026-10-23T12:01:00Z' }, now).toISOString(), '2026-10-23T12:30:00.000Z');
+  assert.equal(resolveAlarmTime({ at: '2026-10-23T12:00:59Z' }, now).toISOString(), '2026-10-23T12:30:00.000Z');
 });
 test('durations read naturally', () => {
   assert.equal(formatDuration(0), '0 分');
