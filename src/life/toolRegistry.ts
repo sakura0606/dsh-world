@@ -7,6 +7,46 @@ import type { ToolDefinition, ToolGuard } from '@deepseek-ai/dsh-tools';
 type Registration = (() => void)[];
 const ALARM_TOOLS = ['plan_next', 'check_alarm', 'cancel_alarm'];
 const HOME_TOOLS = ['reach_out', 'keep_photo', 'list_photos', 'forget_photo'];
+/**
+ * 本地定制（fork）：她一轮里用得上的只有文件、搜索、记忆和自己的世界工具，其余都是每轮重发一遍的
+ * 编码助手家具和旧 bridge 的 MCP 接口。后者尤其有害——那套 QQ 接口缺会话令牌，她一调就失败，
+ * 还会据此以为消息没发出去，把同一句话再说一遍。DSH 的 restrict 只过滤全局工具，她自己那批
+ * scoped 登记不受影响，所以这里只列全局名字；宿主没有的名字会被跳过，升级不会变成一次抛错。
+ */
+const UNUSED_GLOBAL = [
+  'ask_user_question', 'create_goal', 'exit_plan_mode', 'get_goal', 'interrupt_agent',
+  'job_kill', 'job_list', 'job_output', 'list_agents',
+  'list_mcp_resource_templates', 'list_mcp_resources', 'read_mcp_resource',
+  'mcp__snowluma-host__snowluma_status',
+  'mcp__snowluma__qq_collect_sticker', 'mcp__snowluma__qq_get_active_members',
+  'mcp__snowluma__qq_get_forward_msg', 'mcp__snowluma__qq_get_group_members',
+  'mcp__snowluma__qq_get_message_detail', 'mcp__snowluma__qq_get_message_images',
+  'mcp__snowluma__qq_get_my_recent_messages', 'mcp__snowluma__qq_get_prompt',
+  'mcp__snowluma__qq_get_recent_messages', 'mcp__snowluma__qq_get_self_image',
+  'mcp__snowluma__qq_get_sticker_image', 'mcp__snowluma__qq_get_unread_messages',
+  'mcp__snowluma__qq_list_stickers', 'mcp__snowluma__qq_mark_read',
+  'mcp__snowluma__qq_memory_append', 'mcp__snowluma__qq_memory_clear',
+  'mcp__snowluma__qq_memory_query', 'mcp__snowluma__qq_memory_remove',
+  'mcp__snowluma__qq_reply', 'mcp__snowluma__qq_report_feedback',
+  'mcp__snowluma__qq_send_burst', 'mcp__snowluma__qq_send_group_message',
+  'mcp__snowluma__qq_send_message', 'mcp__snowluma__qq_send_poke',
+  'mcp__snowluma__qq_send_private_message', 'mcp__snowluma__qq_send_sticker',
+  'mcp__snowluma__qq_set_wake_config', 'mcp__snowluma__qq_slang_query',
+  'mcp__snowluma__qq_slang_submit', 'mcp__snowluma__qq_social_state', 'mcp__snowluma__qq_status',
+  'mcp__snowluma__qq_sticker_note', 'mcp__snowluma__qq_wait_for_messages',
+  'mcp__web-search-safe__web_fetch', 'mcp__web-search-safe__web_search',
+  'ops_discover_tools', 'ops_inspect_local_file', 'present',
+  'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update',
+  'send_message', 'skill', 'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'workflow',
+] as const;
+
+/** Hides `names` from one agent's global tools. Names this host no longer has are skipped, and a host without `restrict` keeps everything. */
+export function hideGlobalTools(agent: Agent, names: readonly string[]): () => void {
+  const tools = agent.ctx.tools;
+  if (typeof tools.restrict !== 'function') return () => {};
+  const present = names.filter(name => tools.get(name) !== undefined);
+  return present.length ? tools.restrict({ deny: present }) : () => {};
+}
 
 /** Disposes in reverse; a disposer whose agent scope is already gone may throw and is skipped. */
 function undo(list: Registration): void {
@@ -39,7 +79,10 @@ export function createToolRegistry(deps: { faults: Faults; logger: { error(...ar
         if (needsAlarm) {
           const done = register(agent, tools, ALARM_TOOLS);
           // The world sessions' own policy comes and goes with their alarm tools.
-          try { if (deps.guard) done.push(agent.ctx.tools.guard(execution => deps.inWorld(agent) ? deps.guard!(execution) : undefined)); }
+          try {
+            if (deps.guard) done.push(agent.ctx.tools.guard(execution => deps.inWorld(agent) ? deps.guard!(execution) : undefined));
+            done.push(hideGlobalTools(agent, UNUSED_GLOBAL));
+          }
           catch (error) { undo(done); throw error; }
           alarm.set(agent, done); changed = true;
         }
