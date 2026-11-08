@@ -4,6 +4,7 @@ import { PERSONA_LAYERS, type Persona } from '../persona.ts';
 import { validColdHours, validTurns, validWechatBuffer, MAX_COLD_HOURS, validWechatContext, validWorkspacePermission, MAX_WECHAT_BUFFER_SECONDS, MAX_WECHAT_CONTEXT } from '../worldSwitch.ts';
 import { validArchiveScope, type MemoryArchiveScope } from '../archiveSelection.ts';
 import type { PhotoStore } from '../life/photos.ts';
+import type { Painting } from './roomGallery.ts';
 import { validClockTime } from '../life/alarm.ts';
 import { MemoryError, type MemoryContent, type MemoryErrorCode, type MemoryPage } from '../memory.ts';
 
@@ -16,6 +17,9 @@ export interface ConsoleSources {
   diary(date: string): string | undefined;
   photos?(limit: number, offset: number): ReturnType<PhotoStore['list']>;
   photo?(id: string): ReturnType<PhotoStore['image']>;
+  /** 她自己画的图（房间里的图片文件），只读；`id` 是相对房间的路径。 */
+  paintings?(limit: number, offset: number): { paintings: Painting[]; total: number; hasMore: boolean };
+  painting?(id: string): { mediaType: string; data: Buffer } | undefined;
   /** The same lookups the memory tools make; they check the query themselves. */
   memoryFind?(input: Record<string, unknown>): Promise<MemoryPage>;
   memoryRead?(input: Record<string, unknown>): Promise<MemoryContent>;
@@ -162,6 +166,11 @@ export async function handleConsole(prefix: string, sources: ConsoleSources, act
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) return bad('相册分页参数无效');
       return sources.photos ? ok(sources.photos(limit, offset)) : { status: 404, body: { error: '相册不可用' } };
     }
+    case '/console/paintings': {
+      const limit = Number(url.searchParams.get('limit') ?? 24), offset = Number(url.searchParams.get('offset') ?? 0);
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) return bad('画作分页参数无效');
+      return sources.paintings ? ok(sources.paintings(limit, offset)) : { status: 404, body: { error: '画作不可用' } };
+    }
     default: return { status: 404, body: { error: 'not found' } };
   }
 }
@@ -179,6 +188,12 @@ export function consoleRoute(prefix: string, sources: ConsoleSources, actions: C
             const image = sources.photo?.(url.searchParams.get('id') ?? '');
             if (!image) { sendJson(res, { status: 404, body: { error: '找不到这张照片' } }); return; }
             res.writeHead(200, { 'content-type': image.ref.mediaType, 'content-length': image.data.byteLength, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; sandbox" });
+            res.end(image.data); return;
+          }
+          if (method === 'GET' && url.pathname === prefix + '/console/painting') {
+            const image = sources.painting?.(url.searchParams.get('id') ?? '');
+            if (!image) { sendJson(res, { status: 404, body: { error: '找不到这张画' } }); return; }
+            res.writeHead(200, { 'content-type': image.mediaType, 'content-length': image.data.byteLength, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; sandbox" });
             res.end(image.data); return;
           }
           const write = method === 'POST' && req.headers[WRITE_HEADER] === '1' && String(req.headers['content-type'] ?? '').startsWith('application/json');

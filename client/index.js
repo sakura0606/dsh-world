@@ -214,6 +214,42 @@
             h('span', { className: 'dw-muted' }, '共 ' + page.total + ' 张 · 第 ' + (Math.floor(offset / 12) + 1) + ' 页'),
             h('button', { className: 'dw-btn', disabled: !page.hasMore, onClick: function () { setOffset(offset + 12); setOpen(null) } }, '下一页'))))
     }
+    /** 她画的图：只读地列房间里的图片文件，点开看原图。 */
+    function Paintings(props) {
+      var pageState = useState({ paintings: [], total: 0, hasMore: false }), page = pageState[0], setPage = pageState[1]
+      var offsetState = useState(0), offset = offsetState[0], setOffset = offsetState[1]
+      var openState = useState(null), open = openState[0], setOpen = openState[1]
+      var errorState = useState(''), error = errorState[0], setError = errorState[1]
+      useEffect(function () {
+        var alive = true
+        api('paintings?limit=12&offset=' + offset).then(function (value) { if (alive) { setPage(value); setError('') } }, function (e) { if (alive) setError(String(e.message || e)) })
+        return function () { alive = false }
+      }, [offset, props.tick])
+      function size(bytes) { return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB' }
+      return h('div', { className: 'dw-pane' },
+        h(Card, { title: '她画的画' },
+          h('div', { className: 'dw-muted' }, '房间里的图片文件，只读：新画的在「画」里，早先自己画的散在房间根目录。点一张看原图。'),
+          error ? h('div', { className: 'dw-bad', role: 'alert' }, error) : null,
+          page.paintings.length ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, marginTop: 8 } },
+            page.paintings.map(function (painting) {
+              return h('div', { key: painting.id, style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+                h('img', {
+                  src: prefix + '/console/painting?id=' + encodeURIComponent(painting.id),
+                  alt: painting.name, loading: 'lazy', decoding: 'async',
+                  onClick: function () { setOpen(open === painting.id ? null : painting.id) },
+                  style: { width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 6, cursor: 'zoom-in', background: 'rgba(127,127,127,.12)' },
+                  onError: function () { setError('这张画读取失败：' + painting.name) }
+                }),
+                h('div', { className: 'dw-muted', style: { fontSize: 12, overflowWrap: 'anywhere' } }, painting.name, ' · ', size(painting.bytes), ' · ', local(painting.savedAt, props.zone)))
+            })
+          ) : h('div', { className: 'dw-muted' }, '房间里还没有画。'),
+          open ? h('div', { style: { marginTop: 10 } },
+            h('img', { src: prefix + '/console/painting?id=' + encodeURIComponent(open), alt: open, style: { display: 'block', width: '100%', maxHeight: 640, objectFit: 'contain' } })) : null,
+          h('div', { className: 'dw-setting' },
+            h('button', { className: 'dw-btn', disabled: offset === 0, onClick: function () { setOffset(Math.max(0, offset - 12)); setOpen(null) } }, '上一页'),
+            h('span', { className: 'dw-muted' }, '共 ' + page.total + ' 张 · 第 ' + (Math.floor(offset / 12) + 1) + ' 页'),
+            h('button', { className: 'dw-btn', disabled: !page.hasMore, onClick: function () { setOffset(offset + 12); setOpen(null) } }, '下一页'))))
+    }
     /** 分层人设：每层一张卡，右边是她实际读到的样子。 */
     function PersonaEditor(props) {
       var state = useState(null), persona = state[0], setPersona = state[1]
@@ -818,7 +854,7 @@
           result && result.nextCursor ? h('button', { className: 'dw-btn', disabled: busy, onClick: function () { run(form, result.nextCursor) } }, '更多') : null))
     }
 
-    var TABS = [['overview', '概览'], ['persona', '人设'], ['prompt', '世界提示词'], ['records', '记录'], ['archive', '档案'], ['photos', '相册'], ['qq', 'QQ'], ['wechat', '微信']]
+    var TABS = [['overview', '概览'], ['persona', '人设'], ['prompt', '世界提示词'], ['records', '记录'], ['archive', '档案'], ['photos', '相册'], ['paintings', '画作'], ['qq', 'QQ'], ['wechat', '微信']]
     /** 一份快照的画面；life 为 null（停着，或生活线没能启动）或缺了哪一块都不会崩。 */
     function View(props) {
       var snap = props.snap, error = props.error
@@ -850,6 +886,7 @@
         tab === 'records' ? h(Records, { snap: snap, tick: props.tick }) : null,
         tab === 'archive' ? h(MemorySearch, { zone: snap.timeZone }) : null,
         tab === 'photos' ? h(PhotoAlbum, { tick: props.tick, zone: snap.timeZone }) : null,
+        tab === 'paintings' ? h(Paintings, { tick: props.tick, zone: snap.timeZone }) : null,
         tab === 'qq' ? h('div', { className: 'dw-pane' }, snap.native
           ? h(Qq, { native: snap.native, onSaved: props.refresh, onNeedPassword: setPanel })
           : h(Card, { title: 'QQ' }, h('div', { className: 'dw-muted' }, 'QQ 通道未开启，请在概览的「接入」中检查配置和开关。'))) : null,

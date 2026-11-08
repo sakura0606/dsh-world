@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import { createHistory, renderHistory } from '../history.ts';
 import { createDiaryReader } from '../life/diary.ts';
+import { createRoomGallery } from './roomGallery.ts';
 import type { LifeStore } from '../life/lifeStore.ts';
 import type { LifeRuntime } from '../life/runtime.ts';
 import type { ArchiveStore } from '../store.ts';
@@ -33,6 +34,8 @@ export interface SnapshotDeps {
   /** Long-term memory: the console's lookups and the health of its index. */
   longTerm?: MemoryService;
   diaryDir: string;
+  /** 她的房间；控制台「画作」页只读这里面的图片。缺省时那个页不可用，控制台其余部分照常。 */
+  roomDir?: string;
   running(): boolean;
   /** CNY a day for her home; undefined is no limit. */
   dailyBudget(): number | undefined;
@@ -61,6 +64,8 @@ export function consoleSources(deps: SnapshotDeps): ConsoleSources & { invalidat
   const { config, archive, lifeStore } = deps;
   const history = createHistory(archive);
   const diary = createDiaryReader(deps.diaryDir);
+  /** 她的画：只读地列房间里的图片文件，不复制、不改动。没有房间就没有这一页，其余照常。 */
+  const gallery = deps.roomDir === undefined ? undefined : createRoomGallery(deps.roomDir);
   let cached: { at: number; value: Promise<unknown> } | undefined;
   async function compute(): Promise<unknown> {
     const life = deps.life()?.snapshot();
@@ -100,6 +105,7 @@ export function consoleSources(deps: SnapshotDeps): ConsoleSources & { invalidat
     diary: date => diary.read(date),
     photos: (limit, offset) => { if (!deps.photos) throw new Error('相册不可用'); return deps.photos().list(limit, offset); },
     photo: id => deps.photos?.().image(id),
+    ...(gallery ? { paintings: (limit: number, offset: number) => gallery.list(limit, offset), painting: (id: string) => gallery.read(id) } : {}),
     ...(deps.longTerm ? { memoryFind: (input: Record<string, unknown>) => deps.longTerm!.find(input), memoryRead: (input: Record<string, unknown>) => deps.longTerm!.read(input) } : {}),
   };
 }
