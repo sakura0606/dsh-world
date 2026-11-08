@@ -35,7 +35,7 @@ const UNUSED_GLOBAL = [
   'mcp__snowluma__qq_slang_submit', 'mcp__snowluma__qq_social_state', 'mcp__snowluma__qq_status',
   'mcp__snowluma__qq_sticker_note', 'mcp__snowluma__qq_wait_for_messages',
   'mcp__web-search-safe__web_fetch', 'mcp__web-search-safe__web_search',
-  'ops_discover_tools', 'ops_inspect_local_file', 'present',
+  'present',
   'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update',
   'send_message', 'skill', 'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'workflow',
 ] as const;
