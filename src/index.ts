@@ -20,6 +20,7 @@ import { hostLife } from './life/host.ts';
 import { createLifeStore, durableWrite } from './life/lifeStore.ts';
 import { toastSupported, windowsToast, type Notifier } from './life/notify.ts';
 import { createLifeRuntime, type LifeRuntime } from './life/runtime.ts';
+import { hideToolsOnAssemble, UNUSED_GLOBAL } from './life/toolRegistry.ts';
 import type { LifeOptions } from './life/types.ts';
 import { createOutlet } from './ecosystem/shared/outlets.ts';
 import { readPersona, writePersona } from './persona.ts';
@@ -178,6 +179,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const inWorkspace = createWorkspaceMembership(ctx, roomDir, () => Array.from(worlds.rooms.values(), room => room.path));
   const archiveSession = createArchiveSelection(power.archiveScope(), id => isHome(id), inWorkspace);
   const inWorldSession = (session: Session) => inWorld(session, config, inWorkspace);
+  // 工具瘦身：装配那一刻把这一轮用不到的工具摘掉（见 toolRegistry.ts 的 hideToolsOnAssemble）。
+  ctx.effect(() => hideToolsOnAssemble(ctx, agent => inWorldSession(agent.session), UNUSED_GLOBAL), 'dsh-world tool slimming');
   /** Long-term memory over the archive and her own files; the tools and the console are two doors to it. */
   const memoryService = createMemory({ store: store.memory, timeZone: config.timeZone, sources: { diaryDir: options.diaryDir }, visible: id => archiveSession(id) });
 

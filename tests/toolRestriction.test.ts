@@ -6,7 +6,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { bindScopeParent, scopeOf } from '@deepseek-ai/dsh-scope';
 import { hostFixture, textResponse } from './hostFixture.ts';
 import { registerScopedTool } from '../src/worldScope.ts';
-import { hideGlobalTools } from '../src/life/toolRegistry.ts';
+import { hideGlobalTools, hideToolsOnAssemble } from '../src/life/toolRegistry.ts';
 
 const probe = (name: string) => defineTool({
   name, description: `${name} probe`, parameters: {},
@@ -74,4 +74,25 @@ test('a restriction reads the agent scope, so a tool inherited from an enclosing
   await ask(parent);
   assert.equal(visible(1, 'inherited_probe'), true, 'the enclosing scope keeps it');
   lift();
+});
+
+test('a hidden tool is gone from her assembled request and stays for everyone else', async t => {
+  const requests: GenerateOptions[] = [];
+  const { ctx, cleanup } = await hostFixture(t, async function* (request): AsyncIterable<StreamChunk> {
+    requests.push(request);
+    yield* textResponse('ok');
+  });
+  cleanup.push(ctx.tools.register(probe('assembled_probe')));
+  const hide = hideToolsOnAssemble(ctx, agent => agent.id === 'hers', ['assembled_probe']);
+  cleanup.push(hide);
+  const ask = async (id: string) => {
+    const { agent } = await ctx.agents.create({ sessionId: SessionId(id), agentOptions: { provider: 'test', model: 'test' } });
+    agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'hello' }] }));
+    await agent.whenIdle();
+    return requests.at(-1)!.tools?.some(tool => tool.name === 'assembled_probe') ?? false;
+  };
+  assert.equal(await ask('hers'), false, 'the assembled request never carries it');
+  assert.equal(await ask('other'), true, 'another session keeps it');
+  hide();
+  assert.equal(await ask('hers-again'), true, 'lifting the filter brings it back');
 });

@@ -1,4 +1,5 @@
 import type { Agent } from '@deepseek-ai/dsh-agent';
+import type { Context } from '@deepseek-ai/cordis';
 import { scopeOf } from '@deepseek-ai/dsh-scope';
 import type {} from '@deepseek-ai/dsh-tools';
 import { errorText, type Faults } from '../faults.ts';
@@ -15,8 +16,9 @@ const HOME_TOOLS = ['reach_out', 'keep_photo', 'list_photos', 'forget_photo'];
  * scoped 登记不受影响，所以这里只列全局名字；宿主没有的名字会被跳过，升级不会变成一次抛错。
  */
 const UNUSED_GLOBAL = [
-  'ask_user_question', 'create_goal', 'exit_plan_mode', 'get_goal', 'interrupt_agent',
-  'job_kill', 'job_list', 'job_output', 'list_agents',
+  'ask_user_question', 'create_goal', 'exit_plan_mode', 'get_goal', 'goal_status', 'interrupt_agent',
+  'job_kill', 'job_list', 'job_output', 'list_agents', 'list_subagent_models',
+  'glob', 'grep', 'ops_result', 'working_directory',
   'list_mcp_resource_templates', 'list_mcp_resources', 'read_mcp_resource',
   'mcp__snowluma-host__snowluma_status',
   'mcp__snowluma__qq_collect_sticker', 'mcp__snowluma__qq_get_active_members',
@@ -37,9 +39,27 @@ const UNUSED_GLOBAL = [
   'mcp__snowluma__qq_sticker_note', 'mcp__snowluma__qq_wait_for_messages',
   'mcp__web-search-safe__web_fetch', 'mcp__web-search-safe__web_search',
   'present',
-  'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update',
-  'send_message', 'skill', 'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'workflow',
+  'schedule_create', 'schedule_delete', 'schedule_edit', 'schedule_list', 'schedule_update', 'schedule_view',
+  'send_message', 'skill', 'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'video_help',
+  'video_storyboard_settings', 'watch_together_settings', 'workflow',
 ] as const;
+export { UNUSED_GLOBAL };
+
+/**
+ * Hides the named tools from her requests at the moment they are assembled.
+ *
+ * `hideGlobalTools` asks the registry what it has at attach time; on a resumed session that runs before the preset's
+ * layer is complete, so it finds nothing and quietly does nothing (the fault list stays empty and it looks applied).
+ * This one edits the assembled tool list itself: a tool the request never carries is one the model cannot call.
+ */
+export function hideToolsOnAssemble(ctx: Context, hers: (agent: Agent) => boolean, names: readonly string[]): () => void {
+  const deny = new Set<string>(names);
+  return ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+    const result = await next();
+    if (context.agent && hers(context.agent)) result.tools = result.tools.filter(tool => !deny.has(tool.name));
+    return result;
+  });
+}
 
 /** Hides `names` from one agent's global tools. Names this host no longer has are skipped, and a host without `restrict` keeps everything. */
 export function hideGlobalTools(agent: Agent, names: readonly string[]): () => void {
