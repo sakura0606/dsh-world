@@ -78,13 +78,29 @@ export function hideToolsOnAssemble(ctx: Context, hers: (agent: Agent) => boolea
   });
 }
 
-/** Hides `names` from one agent's global tools. Names this host no longer has are skipped, and a host without `restrict` keeps everything. */
-export function hideGlobalTools(agent: Agent, names: readonly string[]): () => void {
-  const tools = agent.ctx.tools;
+/** The Web host's preset registry; a session preset is an isolated realm the host plane cannot see (0.2.1-rc.2 on). */
+export interface PresetServices { serviceFor?(agent: Agent, name: string): unknown }
+
+/**
+ * The tool service this agent's presets actually use. Her tools are contributed by a preset plugin list, which runs
+ * in its own realm: `agent.ctx.tools` there is the host plane and holds none of them, so a restriction registered on
+ * it is a silent no-op (2026-11-10 实测：glob 仍在 deny 名单里却被她成功调用). The preset realm is reached the same
+ * way compaction is (see console/homeApply.ts).
+ */
+function toolsServiceOf(agent: Agent, preset?: PresetServices): typeof agent.ctx.tools {
+  return (preset?.serviceFor?.(agent, 'tools') as typeof agent.ctx.tools | undefined) ?? agent.ctx.tools;
+}
+
+/** Hides `names` from one agent's tools. Names this host no longer has are skipped, and a host without `restrict` keeps everything. */
+export function hideGlobalTools(agent: Agent, names: readonly string[], preset?: PresetServices, faults?: Faults): () => void {
+  const tools = toolsServiceOf(agent, preset);
   if (typeof tools.restrict !== 'function') return () => {};
   // Without the scope, `get` reads the global layer alone; hers sit in the preset's ancestor layers.
   const scope = scopeOf(agent.ctx);
   const present = names.filter(name => tools.get(name, scope) !== undefined);
+  // A wrong service finds nothing and would look applied forever; say so where the console can see it.
+  if (!present.length) faults?.set(`restrict:${agent.id}`, `工具瘦身一个名字都没认出（${names.length} 个待删，工具服务可能不在这层）`);
+  else faults?.clear(`restrict:${agent.id}`);
   return present.length ? tools.restrict({ deny: present }) : () => {};
 }
 
@@ -98,7 +114,7 @@ function undo(list: Registration): void {
  * checking each of its tool calls; reach_out only by the current home. A registration that fails (a name clash) is a fault and never breaks
  * agent creation; it registers all of a group or none. Each tool refuses to run once its session leaves her world.
  */
-export function createToolRegistry(deps: { faults: Faults; logger: { error(...args: unknown[]): void }; tools: (agent: Agent) => readonly ToolDefinition[]; isHome(agent: Agent): boolean; inWorld(agent: Agent): boolean; guard?: ToolGuard }) {
+export function createToolRegistry(deps: { faults: Faults; logger: { error(...args: unknown[]): void }; tools: (agent: Agent) => readonly ToolDefinition[]; isHome(agent: Agent): boolean; inWorld(agent: Agent): boolean; guard?: ToolGuard; preset?: PresetServices }) {
   const alarm = new Map<Agent, Registration>();
   const home = new Map<Agent, Registration>();
   function register(agent: Agent, tools: readonly ToolDefinition[], names: string[]): Registration {
@@ -122,7 +138,7 @@ export function createToolRegistry(deps: { faults: Faults; logger: { error(...ar
           try { if (deps.guard) done.push(agent.ctx.tools.guard(execution => deps.inWorld(agent) ? deps.guard!(execution) : undefined)); }
           catch (error) { undo(done); throw error; }
           // A host that refuses the tool list must not cost her the alarm tools; the fault says what happened.
-          try { done.push(hideGlobalTools(agent, UNUSED_GLOBAL)); }
+          try { done.push(hideGlobalTools(agent, UNUSED_GLOBAL, deps.preset, deps.faults)); }
           catch (error) { deps.faults.set(`restrict:${agent.id}`, `工具限制没能挂上：${errorText(error)}`); deps.logger.error(error); }
           alarm.set(agent, done); changed = true;
         }

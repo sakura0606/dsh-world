@@ -374,6 +374,8 @@ export function createLifeRuntime(deps: LifeDeps) {
   };
   const tools = createToolRegistry({
     faults, logger: ctx.logger,
+    // 她的工具在 preset 的隔离域里，限制也要落到那一份服务上（见 toolRegistry.ts 的 toolsServiceOf）。
+    preset: { serviceFor: (agent, name) => (ctx.get('agentPresets') as { serviceFor?(agent: Agent, name: string): unknown } | undefined)?.serviceFor?.(agent, name) },
     inWorld: agent => !stopped && includes(agent.session),
     isHome: agent => agent.id === state.homeSessionId,
     guard: ({ name, arguments: args, agent }) => {
