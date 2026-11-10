@@ -6,7 +6,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { bindScopeParent, scopeOf } from '@deepseek-ai/dsh-scope';
 import { hostFixture, textResponse } from './hostFixture.ts';
 import { registerScopedTool } from '../src/worldScope.ts';
-import { hideGlobalTools, hideToolsOnAssemble } from '../src/life/toolRegistry.ts';
+import { dropHiddenTools, hideGlobalTools, hideToolsOnAssemble } from '../src/life/toolRegistry.ts';
 
 const probe = (name: string) => defineTool({
   name, description: `${name} probe`, parameters: {},
@@ -95,4 +95,14 @@ test('a hidden tool is gone from her assembled request and stays for everyone el
   assert.equal(await ask('other'), true, 'another session keeps it');
   hide();
   assert.equal(await ask('hers-again'), true, 'lifting the filter brings it back');
+});
+
+test('a missing tool list is left alone: the filter never becomes the reason a turn dies', () => {
+  const deny = new Set(['hidden']);
+  const tools = [{ name: 'hidden' }, { name: 'kept' }];
+  assert.deepEqual(dropHiddenTools({ tools }, deny).tools, [{ name: 'kept' }]);
+  // 全新会话的头几次装配没有工具段（2026-11-10 新家第一句就是死在这上面）。
+  assert.equal(dropHiddenTools({ sections: [] } as { sections: unknown[]; tools?: unknown[] }, deny).tools, undefined);
+  assert.equal(dropHiddenTools(undefined as unknown as {}, deny), undefined);
+  assert.deepEqual(dropHiddenTools({ tools: [null, { name: 'kept' }] }, deny).tools, [null, { name: 'kept' }], '无名的项原样留着');
 });

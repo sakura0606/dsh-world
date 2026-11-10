@@ -52,12 +52,23 @@ export { UNUSED_GLOBAL };
  * layer is complete, so it finds nothing and quietly does nothing (the fault list stays empty and it looks applied).
  * This one edits the assembled tool list itself: a tool the request never carries is one the model cannot call.
  */
+/**
+ * Drops the hidden tools from one assembled request. The tool list is not guaranteed to be there — a brand-new
+ * session assembles before any tool provider has contributed — so a missing or non-array list is left untouched:
+ * a filter must never be the reason her turn dies.
+ */
+export function dropHiddenTools<T>(assembly: T, deny: ReadonlySet<string>): T {
+  const tools = (assembly as { tools?: unknown } | undefined)?.tools;
+  if (Array.isArray(tools)) (assembly as { tools: unknown }).tools = tools.filter(tool => !deny.has((tool as { name?: string } | null)?.name ?? ''));
+  return assembly;
+}
+
 export function hideToolsOnAssemble(ctx: Context, hers: (agent: Agent) => boolean, names: readonly string[]): () => void {
   const deny = new Set<string>(names);
   return ctx.on('system-prompt/assemble', async (assembly, context, next) => {
-    const result = await next();
-    if (context.agent && hers(context.agent)) result.tools = result.tools.filter(tool => !deny.has(tool.name));
-    return result;
+    if (!context.agent || !hers(context.agent)) return next();
+    dropHiddenTools(assembly, deny);
+    return dropHiddenTools(await next(), deny);
   });
 }
 
