@@ -12,7 +12,7 @@ import { createWorldRuntime } from '../src/runtime.ts';
 import { DEFAULT_COLD_HOURS } from '../src/worldSwitch.ts';
 import { createArchiveStore } from '../src/store.ts';
 import { renderSelf, SELF_CAP } from '../src/self.ts';
-import { readTemplate, renderTemplate, renderWorldPrompt, worldNames } from '../src/worldPrompt.ts';
+import { DEFAULT_VOICE, readTemplate, renderTemplate, renderWorldPrompt, worldNames } from '../src/worldPrompt.ts';
 import ToolFreeCompaction from '../src/compaction.ts';
 import { readPersona, renderPersona, writePersona } from '../src/persona.ts';
 import { record } from './fixtures.ts';
@@ -551,4 +551,25 @@ test('a custom world prompt is never changed: the console is told which memory v
   const unix = (text: string) => text.replace(/\r\n/g, '\n');
   assert.ok(unix(shipped).includes(unix(snippet)), 'the snippet is exactly what the shipped template carries');
   assert.equal(renderWorldPrompt({ names, memoryTools: true }, snippet, undefined, true), renderWorldPrompt({ names, memoryTools: true }, shipped, undefined, true).replace(/^[\s\S]*?(?=## 找回过去)/, '').trim());
+});
+test('her speaking rules are the LAST thing in her system prompt, and voice.md is picked up the next turn', async t => {
+  const requests: GenerateOptions[] = [];
+  const { ctx, root, cleanup, errors } = await hostFixture(t, async function* (request) { requests.push(request); yield* textResponse('嗯'); });
+  const store = createArchiveStore({ ...config, root });
+  const voiceFile = join(root, 'voice.md');
+  const world = createWorldRuntime(ctx, { ...config, selfFile: join(root, 'self.md') }, store, { prompt: { voice: voiceFile, names }, isHome: () => true });
+  await world.start(); cleanup.push(() => world.stop().finally(() => store.close()));
+  const { agent } = await ctx.agents.create({ sessionId: SessionId('voice-home'), meta: { agentPreset: 'companion' }, agentOptions: { provider: 'test', model: 'test' } });
+  agent.followup(user('在吗')); await agent.whenIdle();
+  assert.ok(systemOf(requests.at(-1)!).trimEnd().endsWith(DEFAULT_VOICE), 'no voice.md yet: the shipped rules close the prompt');
+
+  await writeFile(voiceFile, 'VOICE_ONE 别用句号');
+  agent.followup(user('改过 voice.md 之后')); await agent.whenIdle();
+  assert.ok(systemOf(requests.at(-1)!).trimEnd().endsWith('VOICE_ONE 别用句号'), 'voice.md closes the prompt, right before her chat history');
+  assert.doesNotMatch(systemOf(requests.at(-1)!), /写给他的每一条/);
+
+  await writeFile(voiceFile, '   ');
+  agent.followup(user('voice.md 空了之后')); await agent.whenIdle();
+  assert.ok(systemOf(requests.at(-1)!).trimEnd().endsWith(DEFAULT_VOICE), 'a blank file falls back instead of dropping the rules');
+  assert.deepEqual(errors, []);
 });

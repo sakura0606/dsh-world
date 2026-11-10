@@ -139,8 +139,8 @@ export interface QqTransport {
   sendPrivate(userId: string, parts: string | QqPart[]): Promise<{ messageId: string }>;
   /** 发账号收藏表情（不是消息段，单发一条）；测试替身可以不实现。 */
   sendCustomFace?(emojiId: string, target: { groupId?: string; userId?: string }): Promise<{ messageId: string }>;
-  /** 发一条 QQ 空间说说；测试替身可以不实现。 */
-  publishQzone?(content: string): Promise<{ tid: string }>;
+  /** 发一条 QQ 空间说说（文字 + 可选图片）；测试替身可以不实现。 */
+  publishQzone?(content: string, options?: { images?: string[]; ugcRight?: number }): Promise<{ tid: string }>;
 }
 
 /** createBridge 认的那几个选项，通道只用到这几个。 */
@@ -234,7 +234,16 @@ export function createQqNativeModule(deps: {
   }
   const outbox = createOutbox<Outgoing>({ send: sendNow, dropped: () => { stats.failed += 1; stats.lastError = '排在队里太久，放弃了'; } });
 
-  /** Sends one of her answers: its paragraphs a pause apart (queued if they fail), then stickers and posts. */
+/**
+ * SnowLuma 的 `send_qzone_msg` 的 images 认 `file:// http:// base64://`。
+ * 她写在 `[[img:…]]` 里的是本地路径，转成 file:// URI 才认（Windows 盘符是三个斜杠）。
+ */
+function toFileUri(file: string): string {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(file)) return file;
+  return `file:///${file.replace(/\\/g, '/')}`;
+}
+
+/** Sends one of her answers: its paragraphs a pause apart (queued if they fail), then stickers and posts. */
   async function say(kind: 'group' | 'private', target: string, text: string): Promise<void> {
     const plan = planReply(text);
     for (const [index, parts] of plan.messages.entries()) {
@@ -245,8 +254,14 @@ export function createQqNativeModule(deps: {
       try { await client?.sendCustomFace?.(sticker, kind === 'group' ? { groupId: target } : { userId: target }); }
       catch (error) { deps.logger.warn(`QQ 收藏表情没发出去：${errorText(error)}`); }
     }
+    // 同一条回复里的图片也带进说说：SnowLuma 的 send_qzone_msg 支持 images（自动上传）。
+    // 2026-11-09 实报：她往 `[[qzone:…]]` 里塞 markdown 图片发不出去——图片要单独走 `[[img:…]]`。
+    const qzoneImages = plan.messages
+      .flatMap(entry => (Array.isArray(entry) ? entry : []))
+      .filter((part): part is Extract<QqPart, { type: 'image' }> => part.type === 'image')
+      .map(part => toFileUri(part.file));
     for (const content of plan.qzone) {
-      try { await client?.publishQzone?.(content); }
+      try { await client?.publishQzone?.(content, qzoneImages.length ? { images: qzoneImages } : undefined); }
       catch (error) { deps.logger.warn(`QQ 空间那条没发出去：${errorText(error)}`); }
     }
   }

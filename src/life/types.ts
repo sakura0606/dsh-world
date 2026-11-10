@@ -1,3 +1,5 @@
+import type { PeakWindow } from './alarm.ts';
+
 export type AlarmSource = 'plan' | 'fallback';
 /** `nudged`: she was already asked once, when a home turn stopped well before this alarm, whether she is done. */
 export interface Alarm { at: string; note: string; setAt: string; source: AlarmSource; nudged?: true }
@@ -22,11 +24,13 @@ export interface LifeState { version: 1; homeSessionId?: string; alarm?: Alarm; 
 export interface WakeRecord { scheduledAt: string; deliveredAt: string; source: AlarmSource | 'first' | 'return' | 'review'; lateMs: number }
 export interface ActivityRecord { time: string; sessionId: string; callId: string; tool: string; summary: string; outside: boolean; gapBefore?: true; status?: 'ok' | 'error' }
 export interface CompactionRecord { time: string; sessionId: string; ok: boolean; shadowedTokens?: number; error?: string }
-export interface DailySchedule { review: string; wake: string }
+export interface DailySchedule { review: string; wake: string; weekdayWake?: string }
 export interface LifeOptions {
   worldDir: string; roomDir: string; diaryDir: string; selfFile: string; timeZone: string;
   /** Local HH:MM of the evening look back and of the morning wake when nothing is pending; read each time, since the console can change them. */
   schedule(): DailySchedule;
   /** Her alarm wording; the shipped `templates/alarm.md` when absent or missing. */
   alarmFile?: string;
+  /** 工作日高峰时段（本地时间）：计划唤醒推到时段结束，默认 9–12、14–18。DeepSeek 改峰谷时改这里就够。 */
+  peakWindows?: readonly PeakWindow[];
 }

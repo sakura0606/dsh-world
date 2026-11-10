@@ -17,6 +17,8 @@ export interface WorldConfig {
   diaryDir?: string;
   /** Local HH:MM of the morning wake when no alarm is pending (she set none, or cancelled hers); 09:00 by default. */
   fallbackWakeTime?: string;
+  /** 工作日兜底起床时间（本地 HH:MM）；默认 12:00，周末仍用 `fallbackWakeTime`。 */
+  weekdayWakeTime?: string;
   /** Her own "who I am" file, part of the world prompt; defaults to `<world>/room/我是谁.md` in the plugin. */
   selfFile?: string;
   /** Her name (home title, notifications, memory labels); TA when unset. */
@@ -25,6 +27,8 @@ export interface WorldConfig {
   partnerName?: string;
   /** Her layered persona, edited in the world console; defaults to `<world>/persona.md`. */
   personaFile?: string;
+  /** Her speaking rules, the last section of her system prompt; defaults to `<world>/voice.md`, the shipped rules when missing. */
+  voiceFile?: string;
   /** The world prompt template; defaults to `<world>/world-prompt.md` when it exists, else the shipped one. */
   worldPromptFile?: string;
   /** The alarm wording template; defaults to `<world>/alarm.md` when it exists, else the shipped one. */

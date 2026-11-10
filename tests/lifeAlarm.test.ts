@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { greetingText, earlyStopText, nextReview, reviewOf, formatDuration, nextLocalTime, resolveAlarmTime, wakeText } from '../src/life/alarm.ts';
+import { greetingText, earlyStopText, nextReview, reviewOf, formatDuration, nextLocalTime, pushOutOfQuietHours, resolveAlarmTime, wakeText } from '../src/life/alarm.ts';
 
 const now = new Date('2026-10-23T12:00:00.000Z');
 test('alarm time accepts exactly one of an offset timestamp or minutes, and moves anything inside thirty minutes out to thirty', () => {
@@ -93,3 +93,16 @@ test('the morning fallback never carries a work record — it is not a promise s
   const fallback = { at: '2026-10-26T10:00:00.000Z', note: '', setAt: '2026-10-26T01:00:00.000Z', source: 'fallback' as const };
   assert.doesNotMatch(wakeText(fallback, new Date('2026-10-26T10:00:00.000Z'), 'UTC', '09:00', undefined, { did: '不该出现' }), /不该出现/);
 });
+test('a plan inside a weekday peak window is pushed to the end of that window', () => {
+  const push = (iso: string) => pushOutOfQuietHours(new Date(iso), 'Asia/Shanghai').toISOString();
+  // 2026-11-09 是周一
+  assert.equal(push('2026-11-09T10:00:00+08:00'), '2026-11-09T04:00:00.000Z', '9–12 sleeps on to 12:00');
+  assert.equal(push('2026-11-09T11:59:00+08:00'), '2026-11-09T04:00:00.000Z');
+  assert.equal(push('2026-11-09T14:30:00+08:00'), '2026-11-09T10:00:00.000Z', '14–18 sleeps on to 18:00');
+  assert.equal(push('2026-11-09T12:00:00+08:00'), '2026-11-09T04:00:00.000Z', 'the window edge stays put');
+  assert.equal(push('2026-11-09T18:00:00+08:00'), '2026-11-09T10:00:00.000Z', 'the window edge stays put');
+  assert.equal(push('2026-11-09T08:00:00+08:00'), '2026-11-09T00:00:00.000Z', 'before 9:00 is free');
+  assert.equal(push('2026-11-07T10:00:00+08:00'), '2026-11-07T02:00:00.000Z', 'Saturday is free');
+  assert.equal(push('2026-11-08T14:30:00+08:00'), '2026-11-08T06:30:00.000Z', 'Sunday is free');
+});
+

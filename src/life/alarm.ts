@@ -56,6 +56,27 @@ export function nextLocalTime(now: Date, hhmm: string, timeZone: string): Date {
   }
   throw new Error(`找不到 ${hhmm} 之后的下一个时间`);
 }
+
+/**
+ * 工作日的高峰时段（本地时间）：9:00–12:00、14:00–18:00。
+ *
+ * 这两段她本来就该睡觉（世界提示词的作息节），而且 token 是峰价。计划唤醒一律推到时段结束；
+ * 用户发来的消息走的是另一条路，不受这里影响。
+ */
+export type PeakWindow = readonly [string, string];
+export const DEFAULT_PEAK_WINDOWS: readonly PeakWindow[] = [['09:00', '12:00'], ['14:00', '18:00']];
+
+/** 把落在工作日高峰时段的计划唤醒推到时段结束；周末和其他时段原样返回。 */
+export function pushOutOfQuietHours(at: Date, timeZone: string, windows: readonly PeakWindow[] = DEFAULT_PEAK_WINDOWS): Date {
+  const local = formatLocalTime(at, timeZone);
+  const weekday = new Date(`${local.slice(0, 10)}T00:00:00Z`).getUTCDay();
+  if (weekday === 0 || weekday === 6) return at;
+  const hhmm = local.slice(11, 16);
+  for (const [from, to] of windows) {
+    if (hhmm >= from && hhmm < to) return nextLocalTime(at, to, timeZone);
+  }
+  return at;
+}
 export function formatDuration(ms: number): string {
   const minutes = Math.max(0, Math.round(ms / 60_000));
   const days = Math.floor(minutes / 1440); const hours = Math.floor((minutes % 1440) / 60); const rest = minutes % 60;
@@ -119,7 +140,7 @@ const local = (at: string | Date, timeZone: string) => formatLocalTime(new Date(
 /** plan_next's answer. Replacing her own plan says what it carried, while she can still copy it over; the plugin's own alarms are replaced silently. */
 export function planReply(at: Date, replaced: Alarm | undefined, timeZone: string): string {
   const old = replaced?.source === 'plan' ? `（替换了原来做到 ${local(replaced.at, timeZone)} 的安排${replaced.note ? `：「${replaced.note}」。还想留着里面的事，就写进新的 note` : ''}。）` : '';
-  return `记下了，到 ${local(at, timeZone)} 提醒我。${old}`;
+  return `到 ${local(at, timeZone)} 提醒我。${old}`;
 }
 export function checkReply(alarm: Alarm | undefined, now: Date, timeZone: string): string {
   if (!alarm) return '现在没有闹钟。';

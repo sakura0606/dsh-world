@@ -8,8 +8,14 @@ import { askTurn, createChannelQueue } from '../shared/turn.ts';
 import { stripHostNoise } from './replies.ts';
 import { admit, type InWorld } from '../../worldScope.ts';
 
-/** A first turn also gets snapshots, the skill catalog, her persona and recall, and often runs past three minutes. */
-export const QQ_REPLY_TIMEOUT_MS = 10 * 60_000;
+/**
+ * A first turn also gets snapshots, the skill catalog, her persona and recall, and often runs past three minutes.
+ *
+ * 本地定制：10 → 30 分钟。她会用 `video_storyboard` 自己逐段看一整集（约 9–10 段、
+ * 每段 1–2 分钟，20 分钟上下），10 分钟必然超时，而超时是静默失败——QQ 那头什么都收不到。
+ * 2026-11-08 实报。
+ */
+export const QQ_REPLY_TIMEOUT_MS = 30 * 60_000;
 
 const NUDGE_TEXT = '【刚才这一轮没有说出要发到 QQ 的话（只有思考，或只剩复述的记录、工具标签）】对方还在等，直接说出你的回复。';
 

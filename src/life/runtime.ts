@@ -15,7 +15,7 @@ import { inWorld } from '../sourceArchive.ts';
 import type { WorldConfig } from '../types.ts';
 import { homeTitle, roomTitle, worldNames } from '../worldPrompt.ts';
 import { admit, reassembleOnChange } from '../worldScope.ts';
-import { budgetText, cancelReply, greetingText, checkReply, earlyStopText, nextLocalTime, nextReview, planReply, resolveAlarmTime, reviewOf, reviewText, wakeText } from './alarm.ts';
+import { budgetText, cancelReply, DEFAULT_PEAK_WINDOWS, greetingText, checkReply, earlyStopText, nextLocalTime, nextReview, planReply, pushOutOfQuietHours, resolveAlarmTime, reviewOf, reviewText, wakeText } from './alarm.ts';
 import { summarizeSince } from './activity.ts';
 import { createAlarmTimer, realTimers, type LifeTimers } from './alarmTimer.ts';
 import { createEarlyStopWatch } from './earlyStop.ts';
@@ -64,6 +64,12 @@ export function createLifeRuntime(deps: LifeDeps) {
   const includes = (session: Agent['session']) => inWorld(session, config, deps.inWorkspace);
   const disposers: (() => void)[] = [];
   const state = store.read();
+  // 旧代码排好的闹钟可能落在工作日高峰里（比如 09:00 的兜底）。启动时按新规则推后，
+  // 不然她明天还是 9 点被叫醒、按峰价发请求。用户消息不经过这里。
+  if (state.alarm) {
+    const at = pushOutOfQuietHours(new Date(state.alarm.at), timeZone, options.peakWindows ?? DEFAULT_PEAK_WINDOWS);
+    if (at.getTime() !== Date.parse(String(state.alarm.at))) state.alarm = { ...state.alarm, at: at.toISOString() };
+  }
   let stopped = false;
   let delivery: Promise<void> | undefined;
 
@@ -79,6 +85,9 @@ export function createLifeRuntime(deps: LifeDeps) {
     return messages;
   }
   const wake = () => options.schedule().wake;
+  /** 工作日兜底起床时间（默认跟 weekend 一样）；周末用 `wake()`。 */
+  const weekdayWake = () => options.schedule().weekdayWake ?? wake();
+  const peakWindows = () => options.peakWindows ?? DEFAULT_PEAK_WINDOWS;
   const templateValues = () => ({ name: names.companion, partner: names.partner, homeTitle: homeTitle(names), timeZone, fallbackWakeTime: wake(), example: exampleTime(timeZone) });
   /**
    * What she actually did between setting this alarm and hearing it, in one line.
@@ -173,7 +182,13 @@ export function createLifeRuntime(deps: LifeDeps) {
     return alarm && { kind: 'alarm', at: alarm.at, alarm };
   }
   const timer = createAlarmTimer({ clock, timers, dueAlarm: () => nextJob()?.at, fire: () => void deliver() });
-  const morning = (now: Date): Alarm => ({ at: nextLocalTime(now, wake(), timeZone).toISOString(), note: '', setAt: now.toISOString(), source: 'fallback' });
+  const morning = (now: Date): Alarm => {
+    // 工作日睡到中午（高峰不醒），周末按配置的起床时间。
+    const local = formatLocalTime(now, timeZone);
+    const weekday = new Date(`${local.slice(0, 10)}T00:00:00Z`).getUTCDay();
+    const hhmm = weekday === 0 || weekday === 6 ? wake() : weekdayWake();
+    return { at: pushOutOfQuietHours(nextLocalTime(now, hhmm, timeZone), timeZone, peakWindows()).toISOString(), note: '', setAt: now.toISOString(), source: 'fallback' };
+  };
   /** A new alarm replaces a failing one, so its backoff and fault go with it. Saved or not, it is armed. */
   function setAlarm(alarm: Alarm): void {
     if (stopped) return;
@@ -191,7 +206,7 @@ export function createLifeRuntime(deps: LifeDeps) {
   function planNext(input: { at?: string; after_minutes?: number }, note: string): string {
     if (stopped) throw new Error('生活线已停止');
     const now = clock();
-    const at = resolveAlarmTime(input, now, timeZone);
+    const at = pushOutOfQuietHours(resolveAlarmTime(input, now, timeZone), timeZone, peakWindows());
     const replaced = state.alarm;
     setAlarm({ at: at.toISOString(), note: note.trim(), setAt: now.toISOString(), source: 'plan' });
     return planReply(at, replaced, timeZone);

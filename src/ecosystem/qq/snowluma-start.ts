@@ -66,8 +66,17 @@ export function startSnowluma(homeDir: string): StartResult {
     }
     const target = entry(homeDir);
     if (!target) return { started: false, error: '这个目录里没有 node.exe / index.mjs / launcher.bat' };
-    spawn(target.exe, target.args, { cwd: homeDir, detached: true, stdio: 'ignore', windowsHide: true })
-      .once('error', error => { attempt.error = error.message; }).unref();
+    if (process.platform === 'win32') {
+      // 控制台程序的 detached spawn + windowsHide 一定留黑框（见 AGENTS.md 的 Windows 坑位），
+      // 改用 Start-Process -WindowStyle Hidden：无窗口，而且进程活在 DSH 之外、能过 DSH 重启。
+      const args = target.args.map(a => `'${a.replace(/'/g, "''")}'`).join(',');
+      const script = `Start-Process -FilePath '${target.exe.replace(/'/g, "''")}' -ArgumentList @(${args}) -WorkingDirectory '${homeDir.replace(/'/g, "''")}' -WindowStyle Hidden`;
+      spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { stdio: 'ignore', windowsHide: true })
+        .once('error', error => { attempt.error = error.message; }).unref();
+    } else {
+      spawn(target.exe, target.args, { cwd: homeDir, detached: true, stdio: 'ignore' })
+        .once('error', error => { attempt.error = error.message; }).unref();
+    }
     pendingStarts.set(key, attempt);
     return { started: true, how: 'spawn', ...(hasTask ? { error: '计划任务没跑起来（可能被禁用了），改为直接起；这条线只活到 DSH 退出' } : {}) };
   } catch (error) {

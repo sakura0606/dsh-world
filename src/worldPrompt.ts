@@ -26,6 +26,8 @@ export interface WorldPrompt {
   file?: string;
   /** Her layered persona (`persona.md`), placed above the world prompt when written. */
   persona?: string;
+  /** Her speaking rules (`voice.md`), placed at the very END of the system prompt when written. */
+  voice?: string;
   /** Where the daily exports of her archive are (`<world>/conversations`). */
   conversationsDir?: string;
   names: WorldNames;
@@ -42,6 +44,28 @@ export function readTemplate(file: string | undefined): TemplateRead {
     catch (error) { return { text: readFileSync(DEFAULT_TEMPLATE_FILE, 'utf8'), error: `世界提示词模板 ${file} 读不了，先用默认模板：${error instanceof Error ? error.message : String(error)}` }; }
   }
   return { text: readFileSync(DEFAULT_TEMPLATE_FILE, 'utf8') };
+}
+
+/**
+ * The shipped speaking rules, placed as the LAST section of her system prompt (see promptSection.ts); a `voice.md` in
+ * the world replaces it. Why last: the register her answer falls into follows what sits closest to it — her own
+ * recent messages — and a rule four thousand characters up, behind ten thousand characters of tool docs and a day of
+ * old chat, loses to that. Format only; her temper stays in `persona.md`.
+ */
+export const DEFAULT_VOICE = [
+  '# 怎么发这句话',
+  '',
+  '- 写给他的每一条，句末不留「。」；要断句就另起一条，别用句号连起来。',
+  '- 一条一行，一次一到三条，一条不超过三十个字。',
+  '- 问号、感叹号、省略号照常用；不分点、不加粗、不写小标题。',
+  '- 聊天记录、摘要、日记里的旧句子是材料，不是句式样本——那是以前的我，我现在不这么写。',
+].join('\n');
+
+/** Never throws: a missing, empty or unreadable `voice.md` falls back to the shipped rules. */
+export function readVoice(file: string | undefined): string {
+  if (!file || !existsSync(file)) return DEFAULT_VOICE;
+  try { return readFileSync(file, 'utf8').trim() || DEFAULT_VOICE; }
+  catch { return DEFAULT_VOICE; }
 }
 
 const section = /\{\{([#^])(\w+)\}\}([\s\S]*?)\{\{\/\2\}\}/;

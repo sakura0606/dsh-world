@@ -42,7 +42,7 @@ function fakeTimers(clock: { now: Date }) {
     jump(ms: number) { clock.now = new Date(clock.now.getTime() + ms); for (const entry of pending) entry.at += ms; },
   };
 }
-interface SetupOptions { afterReview?: () => void; before?: (worldDir: string) => Promise<void>; host?: (host: LifeHost) => LifeHost; store?: (store: LifeStore) => LifeStore; notifier?: Notifier; dailyBudget?: () => number | undefined; inWorkspace?: (id: string) => boolean; alarmContext?: (now: Date) => string | undefined; schedule?: { review: string; wake: string } }
+interface SetupOptions { afterReview?: () => void; before?: (worldDir: string) => Promise<void>; host?: (host: LifeHost) => LifeHost; store?: (store: LifeStore) => LifeStore; notifier?: Notifier; dailyBudget?: () => number | undefined; inWorkspace?: (id: string) => boolean; alarmContext?: (now: Date) => string | undefined; schedule?: { review: string; wake: string }; peakWindows?: readonly (readonly [string, string])[] }
 async function setup(t: test.TestContext, model: (request: GenerateOptions, index: number) => AsyncIterable<StreamChunk>, setupOptions: SetupOptions = {}) {
   const requests: GenerateOptions[] = [];
   const { ctx, root, cleanup, errors } = await hostFixture(t, request => { if (request.purpose !== 'compaction') requests.push(request); return model(request, requests.length - 1); });
@@ -68,7 +68,7 @@ async function setup(t: test.TestContext, model: (request: GenerateOptions, inde
   const host = setupOptions.host?.(baseHost) ?? baseHost;
   const baseStore = createLifeStore(worldDir, config.timeZone);
   const store = setupOptions.store?.(baseStore) ?? baseStore;
-  const options = { worldDir, roomDir: join(worldDir, 'room'), diaryDir: join(worldDir, 'diary'), selfFile: join(worldDir, 'room', 'self.md'), schedule: () => setupOptions.schedule ?? { review: '23:00', wake: '09:00' }, timeZone: config.timeZone, alarmFile: join(worldDir, 'alarm.md') };
+  const options = { worldDir, roomDir: join(worldDir, 'room'), diaryDir: join(worldDir, 'diary'), selfFile: join(worldDir, 'room', 'self.md'), schedule: () => setupOptions.schedule ?? { review: '23:00', wake: '09:00' }, timeZone: config.timeZone, alarmFile: join(worldDir, 'alarm.md'), peakWindows: setupOptions.peakWindows };
   const make = () => createLifeRuntime({ ctx, config, options, store, host, notifier: setupOptions.notifier ?? { toast: async () => {}, outlets: [] }, clock: () => clock.now, timers, ...(setupOptions.dailyBudget ? { dailyBudget: setupOptions.dailyBudget } : {}), inWorkspace: setupOptions.inWorkspace, alarmContext: setupOptions.alarmContext, ...(setupOptions.afterReview ? { afterReview: setupOptions.afterReview } : {}) });
   let life = make();
   cleanup.push(() => life.stop());
@@ -513,7 +513,7 @@ test('a home rebuilt while her own alarm is pending greets her at once, is not a
   assert.deepEqual(s.store.wakes().map(wake => wake.source), ['first', 'plan']);
 });
 test('an alarm that came due while the app was closed is delivered late with the delay', async t => {
-  const s = await setup(t, () => textResponse('醒啦'), { before: async worldDir => {
+  const s = await setup(t, () => textResponse('醒啦'), { peakWindows: [], before: async worldDir => {
     await writeFile(join(worldDir, 'life.json'), JSON.stringify({ version: 1, homeSessionId: 'home-0', alarm: { at: '2026-10-23T00:00:00.000Z', note: '早安', setAt: '2026-10-22T15:00:00.000Z', source: 'plan' } }));
   } });
   await createAgent(s.ctx, 'home-0');
@@ -522,7 +522,7 @@ test('an alarm that came due while the app was closed is delivered late with the
   assert.equal(s.store.wakes()[0].lateMs, 3 * 3_600_000);
 });
 test('timers run in short segments, so a wall-clock jump still delivers the alarm', async t => {
-  const s = await setup(t, (_request, index) => index === 0 ? toolCall('plan_next', { after_minutes: 120, note: '午睡' }) : textResponse('醒了'));
+  const s = await setup(t, (_request, index) => index === 0 ? toolCall('plan_next', { after_minutes: 120, note: '午睡' }) : textResponse('醒了'), { peakWindows: [] });
   await s.start();
   s.timers.jump(2 * 3_600_000);
   s.timers.advance(5 * 60_000); await s.idle();
@@ -573,7 +573,7 @@ test('plan_next without a pending alarm keeps the plain text', async t => {
   s.ctx.tools.register(testTool('play_game', async () => { entered(); await gate; return 'played'; }));
   await s.life.start(); s.timers.advance(0); await playing; await s.life.settled();
   assert.equal(s.alarm(), undefined);
-  assert.equal(s.life.planNext({ after_minutes: 30 }, '看书'), '记下了，到 2026-10-23T12:30:00+09:00 提醒我。');
+  assert.equal(s.life.planNext({ after_minutes: 30 }, '看书'), '到 2026-10-23T12:30:00+09:00 提醒我。');
   release(); await s.idle();
 });
 test('plan_next says what it replaced, and the old note with it', async t => {
@@ -581,9 +581,9 @@ test('plan_next says what it replaced, and the old note with it', async t => {
   await s.start();
   assert.equal(s.alarm()?.source, 'fallback');
   // The plugin's own fallback is not her plan, so replacing it is not worth mentioning.
-  assert.equal(s.life.planNext({ after_minutes: 30 }, ''), '记下了，到 2026-10-23T12:30:00+09:00 提醒我。');
-  assert.equal(s.life.planNext({ after_minutes: 60 }, '看下一课'), '记下了，到 2026-10-23T13:00:00+09:00 提醒我。（替换了原来做到 2026-10-23T12:30:00+09:00 的安排。）');
-  assert.equal(s.life.planNext({ after_minutes: 45 }, '只列检查'), '记下了，到 2026-10-23T12:45:00+09:00 提醒我。（替换了原来做到 2026-10-23T13:00:00+09:00 的安排：「看下一课」。还想留着里面的事，就写进新的 note。）');
+  assert.equal(s.life.planNext({ after_minutes: 30 }, ''), '到 2026-10-23T12:30:00+09:00 提醒我。');
+  assert.equal(s.life.planNext({ after_minutes: 60 }, '看下一课'), '到 2026-10-23T13:00:00+09:00 提醒我。（替换了原来做到 2026-10-23T12:30:00+09:00 的安排。）');
+  assert.equal(s.life.planNext({ after_minutes: 45 }, '只列检查'), '到 2026-10-23T12:45:00+09:00 提醒我。（替换了原来做到 2026-10-23T13:00:00+09:00 的安排：「看下一课」。还想留着里面的事，就写进新的 note。）');
 });
 test('a new alarm clears the retry fault; one that cannot be saved is a fault but still rings', async t => {
   const { held, patch } = holdResolve(2);

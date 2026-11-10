@@ -49,7 +49,7 @@ export type { WorldConfig, ConversationRecord, ConversationTurn, ArchiveCursor }
 export const name = 'dsh-world';
 export const inject = ['agents', 'sessions', 'sessionPersistence', 'llm'];
 /** What `apply` receives: the schema below fills these defaults. */
-export type Config = WorldConfig & Required<Pick<WorldConfig, 'life' | 'replaceCompaction' | 'fallbackWakeTime' | 'outlets' | 'bridge' | 'toast' | 'allowedHosts'>>;
+export type Config = WorldConfig & Required<Pick<WorldConfig, 'life' | 'replaceCompaction' | 'fallbackWakeTime' | 'weekdayWakeTime' | 'outlets' | 'bridge' | 'toast' | 'allowedHosts'>>;
 // The installed default uses the standard preset, a world named default and the system time zone.
 // The life line is on by default and needs the desktop host's services.
 const systemTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -59,8 +59,8 @@ export const Config = z.object({
   archiveScope: z.union([z.const('home').description('仅家会话'), z.const('workspace').description('家所在工作区'), z.transform(z.const('world').hidden(), () => 'workspace' as const).hidden()]).default('workspace').description('记忆归档范围，修改后重启生效'),
   // Install means the tool-free compaction: the first start rewrites the profile's stock compaction row (see README); false leaves it alone.
   replaceCompaction: z.boolean().default(true),
-  life: z.boolean().default(true), diaryDir: z.string(), fallbackWakeTime: z.string().pattern(CLOCK_TIME).default('09:00'),
-  selfFile: z.string(), worldPromptFile: z.string(), alarmTemplateFile: z.string(), personaFile: z.string(),
+  life: z.boolean().default(true), diaryDir: z.string(), fallbackWakeTime: z.string().pattern(CLOCK_TIME).default('09:00'), weekdayWakeTime: z.string().pattern(CLOCK_TIME).default('12:00'),
+  selfFile: z.string(), worldPromptFile: z.string(), alarmTemplateFile: z.string(), personaFile: z.string(), voiceFile: z.string(),
   // Where her words go outside DSH; no app is known by name (see README for the push body).
   outlets: z.array(z.object({ name: z.string().required(), url: z.string(), urlFile: z.string(), path: z.string(), kinds: z.array(z.union([z.const('reply'), z.const('busy'), z.const('reach')])) })).default([]),
   // A local app reads bridge.json to send words to this world's home.
@@ -161,8 +161,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // Her self-description lives in her room whether or not the life line runs; she writes it with her file tools.
   const selfFile = config.selfFile || join(worldDir, 'room', '我是谁.md');
   const personaFile = config.personaFile || join(worldDir, 'persona.md');
+  // 说话规则单独一份，落在系统提示词最后一段；没写就用插件自带的那几条。
+  const voiceFile = config.voiceFile || join(worldDir, 'voice.md');
   const worldPromptFile = config.worldPromptFile || join(worldDir, 'world-prompt.md');
-  const options: LifeOptions = { worldDir, roomDir, diaryDir: config.diaryDir || join(worldDir, 'diary'), selfFile, schedule: () => ({ review: power.reviewTime(), wake: power.wakeTime() }), timeZone: config.timeZone, alarmFile: config.alarmTemplateFile || join(worldDir, 'alarm.md') };
+  const options: LifeOptions = { worldDir, roomDir, diaryDir: config.diaryDir || join(worldDir, 'diary'), selfFile, schedule: () => ({ review: power.reviewTime(), wake: power.wakeTime(), weekdayWake: config.weekdayWakeTime }), timeZone: config.timeZone, alarmFile: config.alarmTemplateFile || join(worldDir, 'alarm.md') };
   /** The name in her persona comes first, then the configured one. */
   const names = () => worldNames({ ...config, companionName: readPersona(personaFile).名字 || config.companionName });
   const lifeStore = (() => {
@@ -192,7 +194,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
    */
   async function startMemory(fresh: boolean): Promise<void> {
     if (memory || disposed) return;
-    const prompt = { file: worldPromptFile, persona: personaFile, conversationsDir: join(worldDir, 'conversations'), names: names(), memoryTools: true, ...(config.life ? { life: options } : {}) };
+    const prompt = { file: worldPromptFile, persona: personaFile, voice: voiceFile, conversationsDir: join(worldDir, 'conversations'), names: names(), memoryTools: true, ...(config.life ? { life: options } : {}) };
     const runtime = createWorldRuntime(ctx, { ...memoryConfig, selfFile }, store, { prompt, names, isHome: id => isHome(id), archiveSession, inWorkspace, memory: memoryService }, power.memoryTurns, power.coldHours);
     memory = runtime;
     try { await runtime.start({ fresh }); faults.clear('memory'); }

@@ -66,6 +66,6 @@ export function planReply(raw: string): ReplyPlan {
   }
   if (last < text.length) parts.push({ type: 'text', text: text.slice(last) });
   const plain = parts.map(part => part.type === 'text' ? part.text : '').join('');
-  const messages = marked ? [parts.filter(part => part.type !== 'text' || part.text.trim())] : plain.split(/\n{2,}/).map(chunk => chunk.trim()).filter(Boolean);
+  const messages = marked ? [parts.filter(part => part.type !== 'text' || part.text.trim())] : plain.split(/\n+/).map(chunk => chunk.trim()).filter(Boolean);
   return { messages, stickers, qzone };
 }

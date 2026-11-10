@@ -243,8 +243,17 @@
                 h('div', { className: 'dw-muted', style: { fontSize: 12, overflowWrap: 'anywhere' } }, painting.name, ' · ', size(painting.bytes), ' · ', local(painting.savedAt, props.zone)))
             })
           ) : h('div', { className: 'dw-muted' }, '房间里还没有画。'),
-          open ? h('div', { style: { marginTop: 10 } },
-            h('img', { src: prefix + '/console/painting?id=' + encodeURIComponent(open), alt: open, style: { display: 'block', width: '100%', maxHeight: 640, objectFit: 'contain' } })) : null,
+          open ? h('div', {
+            onClick: function () { setOpen(null) },
+            style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, zIndex: 9999, cursor: 'zoom-out' }
+          },
+            h('img', {
+              src: prefix + '/console/painting?id=' + encodeURIComponent(open),
+              alt: open,
+              onClick: function (e) { e.stopPropagation() },
+              style: { maxWidth: '94vw', maxHeight: '88vh', objectFit: 'contain', boxShadow: '0 8px 40px rgba(0,0,0,.6)' }
+            }),
+            h('div', { style: { color: 'rgba(255,255,255,.75)', fontSize: 12 } }, '点任意处关闭')) : null,
           h('div', { className: 'dw-setting' },
             h('button', { className: 'dw-btn', disabled: offset === 0, onClick: function () { setOffset(Math.max(0, offset - 12)); setOpen(null) } }, '上一页'),
             h('span', { className: 'dw-muted' }, '共 ' + page.total + ' 张 · 第 ' + (Math.floor(offset / 12) + 1) + ' 页'),

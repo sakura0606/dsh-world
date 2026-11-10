@@ -43,7 +43,15 @@ export function createRoomGallery(roomDir: string) {
 
   /** 新图在前；同一时刻按名字排，保证分页稳定。 */
   function all(): Painting[] {
-    return [...imagesIn(join(root, PAINTING_DIR), PAINTING_DIR), ...imagesIn(root, '房间')]
+    const drawings = imagesIn(join(root, PAINTING_DIR), PAINTING_DIR);
+    // 她有时会把画复制一份到房间根目录（`cp 画/xx.png xx.png`），两个位置都扫就会一张显示两次；
+    // 同名同大小当作同一张，只留 `画/` 那份。2026-11-08 实报。
+    const byName = new Map(drawings.map(p => [p.name, p]));
+    const roomRoot = imagesIn(root, '房间').filter(p => {
+      const twin = byName.get(p.name);
+      return !(twin && twin.bytes === p.bytes);
+    });
+    return [...drawings, ...roomRoot]
       .sort((a, b) => b.savedAt.localeCompare(a.savedAt) || a.name.localeCompare(b.name));
   }
 
