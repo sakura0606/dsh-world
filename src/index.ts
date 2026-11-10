@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 // DSH's HMR reconciles the profile once at every start and drops, as failed imports, the profile modules whose import
 // has not finished (dsh-hmr `reconcileProfile`). The QQ module is imported later and is the only way to `ws`, a CommonJS
@@ -180,7 +180,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const archiveSession = createArchiveSelection(power.archiveScope(), id => isHome(id), inWorkspace);
   const inWorldSession = (session: Session) => inWorld(session, config, inWorkspace);
   // 工具瘦身：装配那一刻把这一轮用不到的工具摘掉（见 toolRegistry.ts 的 hideToolsOnAssemble）。
-  ctx.effect(() => hideToolsOnAssemble(ctx, agent => inWorldSession(agent.session), UNUSED_GLOBAL), 'dsh-world tool slimming');
+  // 每次装配记一行到 <world>/tools-slim.log，用来核实她实际带了多少工具——请求本身没有落盘。
+  let lastSlim = '';
+  ctx.effect(() => hideToolsOnAssemble(ctx, agent => inWorldSession(agent.session), UNUSED_GLOBAL, line => {
+    if (line === lastSlim) return;
+    lastSlim = line;
+    try { appendFileSync(join(worldDir, 'tools-slim.log'), `${new Date().toISOString()} ${line}\n`); } catch { /* 记不下来就算了 */ }
+  }), 'dsh-world tool slimming');
   /** Long-term memory over the archive and her own files; the tools and the console are two doors to it. */
   const memoryService = createMemory({ store: store.memory, timeZone: config.timeZone, sources: { diaryDir: options.diaryDir }, visible: id => archiveSession(id) });
 

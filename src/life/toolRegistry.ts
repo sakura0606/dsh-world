@@ -63,12 +63,18 @@ export function dropHiddenTools<T>(assembly: T, deny: ReadonlySet<string>): T {
   return assembly;
 }
 
-export function hideToolsOnAssemble(ctx: Context, hers: (agent: Agent) => boolean, names: readonly string[]): () => void {
+export function hideToolsOnAssemble(ctx: Context, hers: (agent: Agent) => boolean, names: readonly string[], note?: (text: string) => void): () => void {
   const deny = new Set<string>(names);
   return ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     if (!context.agent || !hers(context.agent)) return next();
+    const before = (assembly as { tools?: unknown } | undefined)?.tools;
+    const count = Array.isArray(before) ? before.length : -1;
     dropHiddenTools(assembly, deny);
-    return dropHiddenTools(await next(), deny);
+    const result = dropHiddenTools(await next(), deny);
+    const after = (result as { tools?: unknown } | undefined)?.tools;
+    // 让她到底带了多少工具可核实：header 记的是建会话那一刻的快照，不是请求本身（2026-11-10 实测）。
+    note?.(`${count} -> ${Array.isArray(after) ? after.length : -1}`);
+    return result;
   });
 }
 
